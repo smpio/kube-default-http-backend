@@ -77,7 +77,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 
 func acceptHeader2contentType(header string) string {
-    return strings.TrimSpace(strings.Split(header, ",")[0])
+    return strings.TrimSpace(strings.Split(strings.Split(header, ";")[0], ",")[0])
 }
 
 
