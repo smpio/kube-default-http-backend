@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"io"
+	"io/ioutil"
 	"flag"
 	"log"
 	"mime"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -19,10 +20,11 @@ const (
 )
 
 var port = flag.Int("port", 8080, "Port number to serve.")
+var cache = make(map[string][]byte)
 
 
 func main() {
-	http.HandleFunc("/", errorHandler("/www"))
+	http.HandleFunc("/", handler)
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "ok")
@@ -36,43 +38,36 @@ func main() {
 }
 
 
-func errorHandler(path string) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ext, format := getExtAndFormat(r)
-		w.Header().Set(ContentType, format)
+func handler(w http.ResponseWriter, r *http.Request) {
+	ext, format := getExtAndFormat(r.Header.Get(FormatHeader))
+	w.Header().Set(ContentType, format)
 
-		errCode := r.Header.Get(CodeHeader)
-		code, err := strconv.Atoi(errCode)
-		if err != nil {
-			code = 404
-			log.Printf("unexpected error reading return code: %v. Using %v\n", err, code)
-		}
-		w.WriteHeader(code)
+	errCode := r.Header.Get(CodeHeader)
+	code, err := strconv.Atoi(errCode)
+	if err != nil {
+		code = 404
+		log.Printf("unexpected error reading return code: %v. Using %v\n", err, code)
+	}
+	w.WriteHeader(code)
 
-		file := fmt.Sprintf("%v/%v%v", path, code, ext)
-		f, err := os.Open(file)
-		if err != nil {
-			log.Printf("error opening file: %v\n", err)
-			scode := strconv.Itoa(code)
-			
-			file := fmt.Sprintf("%v/%cxx%v", path, scode[0], ext)
-			f, err = os.Open(file)
-			if err != nil {
-				log.Printf("unexpected error opening file: %v\n", err)
-				fmt.Fprint(w, "Unknown error")
-				return
-			}
-		}
+	cacheKey := fmt.Sprintf("%v:%v", format, code)
+	data := cache[cacheKey]
 
-		defer f.Close()
-		log.Printf("serving custom error response for code %v and format %v from file %v\n", code, format, file)
-		io.Copy(w, f)
+	if data == nil {
+		data = getBody(ext, format, code)
+		cache[cacheKey] = data
+	}
+
+	_, err = w.Write(data)
+	if err != nil {
+		log.Printf("unexpected error: %v\n", err)
 	}
 }
 
 
-func getExtAndFormat(r *http.Request) (string, string) {
-	format := r.Header.Get(FormatHeader)
+func getExtAndFormat(requestedFormat string) (string, string) {
+	format := requestedFormat
+
 	if format == "" {
 		format = "text/html"
 		log.Printf("format not specified. Using %v\n", format)
@@ -82,10 +77,14 @@ func getExtAndFormat(r *http.Request) (string, string) {
 	var ext string
 
 	cext, err := mime.ExtensionsByType(mediaType)
-	if err != nil {
-		log.Printf("unexpected error reading media type extension: %v. Using %v\n", err, ext)
+	if err != nil || len(cext) == 0 {
+		if err == nil {
+			err = errors.New("no known extensions")
+		}
+
 		format = "text/html"
-		ext = "html"
+		ext = ".html"
+		log.Printf("unexpected error reading media type extension: %v. Using %v\n", err, ext)
 	} else {
 		ext = getLongest(cext)
 	}
@@ -104,4 +103,27 @@ func getLongest(vs []string) string {
     }
     
     return longest
+}
+
+
+func getBody(ext string, format string, code int) []byte {
+	path := "/www"
+
+	file := fmt.Sprintf("%v/%v%v", path, code, ext)
+	data, err := ioutil.ReadFile(file)
+	if err != nil {
+		log.Printf("error reading file: %v\n", err)
+		scode := strconv.Itoa(code)
+
+		file := fmt.Sprintf("%v/%cxx%v", path, scode[0], ext)
+		data, err = ioutil.ReadFile(file)
+		if err != nil {
+			log.Printf("unexpected error reading file: %v\n", err)
+			log.Printf("using fallback error response for code %v and format %v\n", code, format)
+			return []byte("\"Unknown error\"")
+		}
+	}
+
+	log.Printf("using custom error response for code %v and format %v from file %v\n", code, format, file)
+	return data
 }
