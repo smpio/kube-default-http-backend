@@ -39,6 +39,9 @@ func main() {
 
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	// debug:
+	log.Printf("Request headers: %v\n", r.Header)
+
 	ext, format := getExtAndFormat(r.Header.Get(FormatHeader))
 	w.Header().Set(ContentType, format)
 
@@ -52,7 +55,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	cacheKey := fmt.Sprintf("%v:%v", format, code)
 	data := cache[cacheKey]
-
 	if data == nil {
 		data = getBody(ext, format, code)
 		cache[cacheKey] = data
