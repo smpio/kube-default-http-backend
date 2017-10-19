@@ -38,6 +38,13 @@ func main() {
 }
 
 
+// Expected headers:
+// X-Code			indicates the HTTP code to be returned to the client
+// X-Format			the value of the Accept header
+// X-Original-URI
+// X-Namespace
+// X-Ingress-Name
+// X-Service-Name
 func handler(w http.ResponseWriter, r *http.Request) {
 	// debug:
 	log.Printf("Request headers: %v\n", r.Header)
