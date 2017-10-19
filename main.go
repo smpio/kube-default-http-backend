@@ -58,6 +58,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		cache[cacheKey] = data
 	}
 
+	log.Printf("serving page for code %v and format %v\n", code, format)
 	_, err = w.Write(data)
 	if err != nil {
 		log.Printf("unexpected error: %v\n", err)
